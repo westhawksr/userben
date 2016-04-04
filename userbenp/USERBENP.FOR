@@ -1,0 +1,301 @@
+C---------------------------------------------------------------------
+C
+C     PROGRAM: USERBENP
+C     FTA USER BENEFIT DATA INPUT SUMMARY PROGRAM
+C
+C     PARSONS BRINCKERHOFF QUADE & DOUGLAS,INC.
+C     SAN FRANCISCO, CALIFORNIA
+C
+C--------------------------------------------------------------------
+      INTEGER*2    BIZ,ZIZ,BJZ,BKC,RECNUM,SIZ,SJZ,NREC,ERRNUM
+      INTEGER*2    OIZ,OJZ,OKC,DIFF,NIZ,NJZ,NKC
+      INTEGER*4    NZON1,NCAT1,WALKP(101),DRIVP(101),WP,DP
+      INTEGER*4    BTOT,OTOT,NTOT
+      REAL*4       CIVT1T,CIVT1A
+      REAL*4       BLSUM(7),ALSUM(7),RJZ
+      REAL*8       WALKTRN,DRIVTRN,TOTPER,MOTPER,TOTTRN
+      REAL*8       PERTOT(10),PERMOT(10),TRNTOT(10)
+      CHARACTER*6  TPURP1,TDAY1
+      CHARACTER*60 ALTNAME1
+      CHARACTER*80 BASECASE,FILEOUT
+      LOGICAL      EXISTS,RECERR,DESTSW,FOUT
+      ZIZ=0
+      OIZ=1
+      OJZ=1
+      OKC=1
+C
+C WRITE PROGRAM BANNER, DATE & TIME
+C
+      OPEN(26,FILE='USERBENP.RPT',STATUS='UNKNOWN',
+     *        FORM='FORMATTED')
+      CALL GETDAT(IYR,IMON,IDAY)
+      CALL GETTIM(IHR,IMIN,ISEC,I100)
+      IF(IYR.GT.2016) THEN
+      WRITE(26,9901) 
+ 9901 FORMAT(/5x,' *** PROGRAM PERMISSION DATE HAS EXPIRED ***'/)
+      WRITE(*,9901)
+      STOP
+      END IF
+      IYR=IYR-2000
+      WRITE(26,9006)IMON,IDAY,IYR,IHR,IMIN,ISEC
+ 9006 FORMAT(/1X,'HIGHWAY AND TRANSIT USER BENEFIT'/
+     *        1X,'  DATA INPUT SUMMARY PROGRAM'/
+     *        1X,'        PROGRAM: USERBENP'/
+     *        1X,'        VERSION:  25Sep15'//
+     *        1X,'        Date:',I2,'/',I2,'/',I2/
+     *        1X,'        Time:',I2,':',I2,':',I2//)
+      WRITE(*,9006)IMON,IDAY,IYR,IHR,IMIN,ISEC
+C
+C OBTAIN FILE NAME
+C
+      WRITE(*,9001) 
+ 9001 FORMAT(//1X,'Input User Benefit File Name')
+      READ(*,9002) BASECASE
+ 9002 FORMAT(A80)
+      WRITE(*,9003)
+ 9003 FORMAT(/1X,'Selected Origin Zone ?')
+      READ(*,9005) SIZ
+ 9005 FORMAT(I6)
+      WRITE(*,9007)
+ 9007 FORMAT(/1X,'Selected Destination Zone ?')
+      READ(*,9005) SJZ
+      IF(SJZ.EQ.0.AND.SIZ.GT.0) DESTSW=.TRUE.
+      WRITE(*,9008)
+ 9008 FORMAT(/1X,'Input Number of Records to Summarize'/
+     *        1X,' [Default=1000]')
+      READ(*,9005) NREC
+      IF(NREC.EQ.0) NREC=1000
+      WRITE(*,9009)
+ 9009 FORMAT(/1X,'Output File Name')
+      READ(*,9002) FILEOUT
+C
+C VERIFY EXISTENCE OF INPUT FILE
+C
+      INQUIRE(FILE=BASECASE,EXIST=EXISTS)
+      IF(.NOT.EXISTS) THEN
+      WRITE(*,9004) BASECASE
+ 9004 FORMAT(/1X,'User Benefit File ',A40/
+     *           ' Does Not Exist'/)
+      STOP 8
+      END IF
+      WRITE(26,9015) BASECASE
+ 9015 FORMAT(/' INPUT FILE NAME=',A40/)
+C
+C OPEN ALL FILES
+C
+      OPEN(1,FILE=BASECASE,STATUS='OLD',FORM='BINARY')
+      IF(FILEOUT.NE.' ') THEN
+      OPEN(2,FILE=FILEOUT,STATUS='UNKNOWN',FORM='BINARY')
+      FOUT=.TRUE.
+      END IF
+      OPEN(27,FILE='USERBENP.ERR',STATUS='UNKNOWN',
+     *        FORM='FORMATTED')
+      OPEN(28,FILE='USERBENP.REC',STATUS='UNKNOWN',
+     *        FORM='FORMATTED')
+      IF(SIZ.GT.0) THEN
+      OPEN(29,FILE='USERBENP.SEL',STATUS='UNKNOWN',
+     *        FORM='FORMATTED')
+      END IF
+C
+C READ HEADER FILES & COMPARE
+C
+      READ(1,ERR=2) NZON1,NCAT1,CIVT1T,CIVT1A,TPURP1,TDAY1,ALTNAME1
+      IF(FOUT) 
+     * WRITE(2) NZON1,NCAT1,CIVT1T,CIVT1A,TPURP1,TDAY1,ALTNAME1
+      GO TO 3
+    2 WRITE(26,9013) NZON1,NCAT1,CIVT1T,CIVT1A,TPURP1,TDAY1,
+     *               ALTNAME1
+      STOP
+    3 WRITE(26,9013) NZON1,NCAT1,CIVT1T,CIVT1A,TPURP1,TDAY1,
+     *               ALTNAME1
+      WRITE(*,9013)  NZON1,NCAT1,CIVT1T,CIVT1A,TPURP1,TDAY1,
+     *               ALTNAME1
+ 9013 FORMAT(//1X,'          INPUT FILE SUMMARY STATISTICS'/
+     *   1X,'----------------------------------------------------'/
+     *   1X,' ZONES                       ',2X,I4/
+     *   1X,' MARKETS                     ',2X,I4/
+     *   1X,' TRANSIT IN-VEHICLE COEFF    ',F8.4/
+     *   1X,' AUTO    IN-VEHICLE COEFF    ',F8.4/
+     *   1X,' TRIP PURPOSE                ',1X,A6/
+     *   1X,' TIME PERIOD                 ',1X,A6/
+     *   1X,' ALTERNATIVE NAME            ',1X,A60//)
+      IF(NCAT1.GT.10) THEN
+      WRITE(26,9050) NCAT1
+ 9050 FORMAT(' NUMBER OF MARKET SEGMENTS (',I2,') IS GREATER THAN 10'/)
+      RECERR=.TRUE.
+      END IF
+C
+C READ LOGSUM FILE RECORDS
+C
+    1 READ(1,END=200) BIZ,BJZ,BKC,BLSUM
+C
+C CHECK FOR MISSING RECORDS
+C
+       IF(FOUT) THEN
+       BTOT=NZON1*NCAT1*BIZ+NCAT1*BJZ+BKC-1
+       OTOT=NZON1*NCAT1*OIZ+NCAT1*OJZ+OKC-1
+       DIFF=BTOT-OTOT-1
+        IF(DIFF.GT.0) THEN
+        DO K=1,DIFF
+        NTOT=OTOT+K
+        NIZ=NTOT/(NZON1*NCAT1)
+        RJZ=FLOAT(NTOT)-(FLOAT(NIZ)*FLOAT(NZON1)*FLOAT(NCAT1))
+        RJZ=RJZ/FLOAT(NCAT1)
+        NJZ=IFIX(RJZ)
+        NKC=NTOT-(NIZ*NZON1*NCAT1)-(NJZ*NCAT1)+1
+        IF(NJZ.EQ.0) THEN
+        NIZ=NIZ-1
+        NJZ=NZON1
+C       WRITE(26,9997) NIZ,NJZ,NKC
+ 9997   FORMAT(' BOUNDARY CONDITION NIZ=',I4,' NJZ=',I4,' NKC=',I1)
+        END IF
+        WRITE(2) NIZ,NJZ,NKC,ALSUM
+C       WRITE(26,9999) K,BIZ,BJZ,BKC,OIZ,OJZ,OKC,NIZ,NJZ,NKC,RJZ
+ 9999   FORMAT(' K=',I3,
+     *         ' BIZ=',I4,' BJZ=',I4,' BKC=',I4,' -- OIZ=',I4,
+     *         ' OJZ=',I4,' OKC=',I4,' -- NIZ=',I4,' NJZ=',I4,
+     *         ' NKC=',I4,' -- RJZ=',F8.2)
+        END DO
+        END IF
+       END IF
+C
+C CHECK INTEGRITY OF RECORD VALUES
+C
+      IF(BIZ.LT.OIZ) THEN
+      WRITE(27,8007) BIZ,BJZ,BKC,OIZ,OJZ,OKC
+ 8007 FORMAT(' Error in Record Sort --> BIZ=',I4,' BJZ=',I4,' BKC=',I1,
+     *       ' OIZ=',I4,' OJZ=',I4,' OKC=',I1)
+      STOP 8007
+      ELSE
+       IF(BJZ.LT.OJZ.AND.BIZ.EQ.OIZ) THEN
+       WRITE(27,8007) BIZ,BJZ,BKC,OIZ,OJZ,OKC
+       STOP 8007
+       END IF
+      END IF
+      OIZ=BIZ
+      OJZ=BJZ
+      OKC=BKC
+      IF(BIZ.LE.0.OR.BJZ.LE.0.OR.BKC.LE.0) THEN
+      WRITE(27,8005) BIZ,BJZ,BKC,BLSUM
+      GO TO 1
+      END IF      
+      IF(BIZ.GT.NZON1.OR.BJZ.GT.NZON1.OR.BKC.GT.NCAT1) THEN
+      WRITE(27,8005) BIZ,BJZ,BKC,BLSUM
+      GO TO 1
+      END IF
+      IF((BIZ.GT.ZIZ).AND.(MOD(BIZ,100).EQ.0)) THEN
+      WRITE(*,8002) BIZ
+      ZIZ=BIZ
+      END IF
+ 8002 FORMAT(1X,'Processing Origin Zone ',I4)
+      IF((RECNUM.LE.NREC).AND.(BLSUM(1).GT.0.0)) THEN
+      WRITE(28,8003) BIZ,BJZ,BKC,BLSUM
+ 8003 FORMAT(' IZ=',I4,' JZ=',I4,' BKC=',I1,
+     *       ' LSUM=',F10.5,F10.5,G13.6,4G13.6)
+      RECNUM=RECNUM+1
+      IF(RECERR.AND.(RECNUM.EQ.1000)) STOP 8
+      END IF
+      IF(RECERR) GO TO 1
+C
+C OUTPUT SELECTED RECORDS (IF REQUESTED)
+C
+      IF(BIZ.EQ.SIZ) THEN
+       IF(DESTSW) THEN
+       WRITE(29,8003) BIZ,BJZ,BKC,BLSUM
+       ELSE
+       IF(BJZ.EQ.SJZ) WRITE(29,8003) BIZ,BJZ,BKC,BLSUM
+       END IF
+      END IF
+C
+C CHECK FOR ERRORS IN MARKET PROPORTION VALUES
+C
+      IF(BLSUM(4).GT.1.0) THEN
+      WRITE(27,8001) BIZ,BJZ,BKC,BLSUM
+      BLSUM(4)=1.0
+      END IF
+      IF(BLSUM(6).GT.1.0) THEN
+      WRITE(27,8001) BIZ,BJZ,BKC,BLSUM
+ 8001 FORMAT(' IZ=',I5,' JZ=',I5,' BKC=',I2,
+     *       ' LSUM=',2F10.5,F10.6,4F10.5,' MARKET PROP > 1.0')
+      BLSUM(6)=1.0
+      END IF
+      WP=IFIX(BLSUM(5)*100.0)
+      DP=IFIX(BLSUM(7)*100.0)
+      IF(WP.GE.100) THEN
+      WRITE(27,8004) BIZ,BJZ,BKC,BLSUM
+ 8004 FORMAT(' IZ=',I5,' JZ=',I5,' BKC=',I2,                     
+     *       ' LSUM=',2F10.5,F10.6,4F10.5,' TRANSIT SHARE > 1.0')       
+      WP=100
+      BLSUM(5)=0.99
+      END IF
+      IF(DP.GE.100) THEN
+      WRITE(27,8004) BIZ,BJZ,BKC,BLSUM
+      DP=100
+      BLSUM(7)=0.99
+      END IF
+      IF((BLSUM(4)+BLSUM(6)).GT.1.0) WRITE(27,8008) BIZ,BJZ,BKC,BLSUM
+ 8008 FORMAT(' IZ=',I5,' JZ=',I5,' BKC=',I2,
+     *       ' LSUM=',2F10.5,F10.6,4F10.5,' TOTAL MARKET PROP > 1.0')    
+C
+C CHECK FOR NEGATIVE PERSON TRIP VALUES
+C
+      IF(BLSUM(1).LT.0.OR.BLSUM(2).LT.0) THEN
+      WRITE(27,8005) BIZ,BJZ,BKC,BLSUM
+ 8005 FORMAT(' IZ=',I8,' JZ=',I8,' BKC=',I1,
+     *       ' LSUM=',7(1X,E10.2))
+      ERRNUM=ERRNUM+1
+      IF(ERRNUM.GT.1000) THEN
+      WRITE(*,8006)
+ 8006 FORMAT(' NUMBER OF ERROR RECORDS WRITTEN EXCEEDS 1,000')
+      STOP 16
+      END IF
+      END IF
+      IF(WP.LE.0) WP=101
+      IF(DP.LE.0) DP=101
+      WALKP(WP)=WALKP(WP)+BLSUM(1)*BLSUM(4)
+      DRIVP(DP)=DRIVP(DP)+BLSUM(1)*BLSUM(6)
+      TOTPER=TOTPER+BLSUM(1)
+      MOTPER=MOTPER+BLSUM(2)
+      WALKTRN=WALKTRN+DBLE(BLSUM(1))*DBLE(BLSUM(4))*DBLE(BLSUM(5))
+      DRIVTRN=DRIVTRN+DBLE(BLSUM(1))*DBLE(BLSUM(6))*DBLE(BLSUM(7))
+      PERTOT(BKC)=PERTOT(BKC)+DBLE(BLSUM(1))
+      PERMOT(BKC)=PERMOT(BKC)+DBLE(BLSUM(2))
+      TRNTOT(BKC)=TRNTOT(BKC)+
+     *            DBLE(BLSUM(1))*DBLE(BLSUM(4))*DBLE(BLSUM(5)) +
+     *            DBLE(BLSUM(1))*DBLE(BLSUM(6))*DBLE(BLSUM(7))
+      IF(FOUT) WRITE(2) BIZ,BJZ,BKC,BLSUM
+      GO TO 1
+  200 CONTINUE
+      TOTTRN=WALKTRN+DRIVTRN
+      WRITE(26,901) TOTPER,MOTPER,WALKTRN,DRIVTRN,TOTTRN
+  901 FORMAT(//,' TOTAL               PERSON TRIPS=',F14.2/
+     *          ' TOTAL MOTORIZED     PERSON TRIPS=',F14.2/
+     *          ' TOTAL WALK  ACCESS TRANSIT TRIPS=',F14.2/
+     *          ' TOTAL DRIVE ACCESS TRANSIT TRIPS=',F14.2/
+     *          ' TOTAL              TRANSIT TRIPS=',F14.2//)
+      WRITE(26,352)
+  352 FORMAT( '       ',6X,'  TOTAL ',6X,'   MOTOR  ',6X,' TOTAL'/
+     *        ' MARKET',6X,' PERSON ',6X,'  PERSON  ',6X,'TRANSIT'/
+     *        'SEGMENT',6X,'  TRIPS ',6X,'   TRIPS  ',6X,' TRIPS'/
+     *        '-------',6X,'--------',6X,'----------',6X,'------')
+      DO 350 I=1,NCAT1
+      WRITE(26,351) I,PERTOT(I),PERMOT(I),TRNTOT(I)
+  351 FORMAT(3X,I1,3X,2X,F12.0,4X,F12.0,4X,F8.0)
+  350 CONTINUE
+      WRITE(26,301) WALKP(101),DRIVP(101)
+  301 FORMAT(//,3X,' SUMMARY OF PERSON TRIPS BY MARKET ',
+     *             'AND PERCENT TRANSIT'/
+     *          3X,' ----------------------------------',
+     *             '-------------------'//
+     *          3X,'   ',2X,' AVAILABLE',2X,'AVAILABLE '/
+     *          3X,'TRN',2X,'PERSON TRP',2X,'PERSON TRP'/
+     *          3X,' % ',2X,'WALK/DRIVE',2X,'DRIVE ONLY'/
+     *          3X,'---',2X,'----------',2X,'----------'//
+     8          3X,'  0',2(2X,I10))
+      DO 300 I=1,100
+      IF(WALKP(I).GT.0.OR.DRIVP(I).GT.0) THEN
+      WRITE(26,302) I,WALKP(I),DRIVP(I)
+  302 FORMAT(2X,I4,2(2X,I10))
+      END IF
+  300 CONTINUE
+      END
