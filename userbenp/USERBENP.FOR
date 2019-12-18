@@ -23,6 +23,8 @@ C--------------------------------------------------------------------
       OIZ=1
       OJZ=1
       OKC=1
+      RECNUM=0
+      NREC=1000
 C
 C WRITE PROGRAM BANNER, DATE & TIME
 C
@@ -30,7 +32,7 @@ C
      *        FORM='FORMATTED')
       CALL GETDAT(IYR,IMON,IDAY)
       CALL GETTIM(IHR,IMIN,ISEC,I100)
-      IF(IYR.GT.2016) THEN
+      IF(IYR.GT.2019) THEN
       WRITE(26,9901) 
  9901 FORMAT(/5x,' *** PROGRAM PERMISSION DATE HAS EXPIRED ***'/)
       WRITE(*,9901)
@@ -41,7 +43,7 @@ C
  9006 FORMAT(/1X,'HIGHWAY AND TRANSIT USER BENEFIT'/
      *        1X,'  DATA INPUT SUMMARY PROGRAM'/
      *        1X,'        PROGRAM: USERBENP'/
-     *        1X,'        VERSION:  25Sep15'//
+     *        1X,'        VERSION:  27Jan17'//
      *        1X,'        Date:',I2,'/',I2,'/',I2/
      *        1X,'        Time:',I2,':',I2,':',I2//)
       WRITE(*,9006)IMON,IDAY,IYR,IHR,IMIN,ISEC
@@ -209,11 +211,11 @@ C
 C
 C CHECK FOR ERRORS IN MARKET PROPORTION VALUES
 C
-      IF(BLSUM(4).GT.1.0) THEN
+      IF(BLSUM(4).GT.1.01) THEN
       WRITE(27,8001) BIZ,BJZ,BKC,BLSUM
       BLSUM(4)=1.0
       END IF
-      IF(BLSUM(6).GT.1.0) THEN
+      IF(BLSUM(6).GT.1.01) THEN
       WRITE(27,8001) BIZ,BJZ,BKC,BLSUM
  8001 FORMAT(' IZ=',I5,' JZ=',I5,' BKC=',I2,
      *       ' LSUM=',2F10.5,F10.6,4F10.5,' MARKET PROP > 1.0')
@@ -221,19 +223,19 @@ C
       END IF
       WP=IFIX(BLSUM(5)*100.0)
       DP=IFIX(BLSUM(7)*100.0)
-      IF(WP.GE.100) THEN
+      IF(WP.GT.100) THEN
       WRITE(27,8004) BIZ,BJZ,BKC,BLSUM
  8004 FORMAT(' IZ=',I5,' JZ=',I5,' BKC=',I2,                     
      *       ' LSUM=',2F10.5,F10.6,4F10.5,' TRANSIT SHARE > 1.0')       
       WP=100
-      BLSUM(5)=0.99
+      BLSUM(5)=0.999
       END IF
-      IF(DP.GE.100) THEN
+      IF(DP.GT.100) THEN
       WRITE(27,8004) BIZ,BJZ,BKC,BLSUM
       DP=100
-      BLSUM(7)=0.99
+      BLSUM(7)=0.999
       END IF
-      IF((BLSUM(4)+BLSUM(6)).GT.1.0) WRITE(27,8008) BIZ,BJZ,BKC,BLSUM
+      IF((BLSUM(4)+BLSUM(6)).GT.1.01) WRITE(27,8008) BIZ,BJZ,BKC,BLSUM
  8008 FORMAT(' IZ=',I5,' JZ=',I5,' BKC=',I2,
      *       ' LSUM=',2F10.5,F10.6,4F10.5,' TOTAL MARKET PROP > 1.0')    
 C
