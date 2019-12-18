@@ -23,7 +23,8 @@ C--------------------------------------------------------------------
       INTEGER*4    TRPWLK,TRPDRV,NTWLK,NTDRV
       INTEGER*4    MKDIFF(6000,2,2),MKZONE(6000)
       INTEGER*4    TPURP,IRIDERS,OIZ,OJZ,TOTMTX,INDEX,TOTCAP
-      INTEGER*4    DISTEQ(6000)
+      INTEGER*4    DISTEQ(6000),IEQUIV(6000),EQUIV(10000)
+      INTEGER*4    DFILTER(50,50)
       REAL*4       CIVT1T,CIVT1A,CIVT2T,CIVT2A
       REAL*4       BLSUM(7),ALSUM(7),WPERSON,DPERSON,TOTVAL
       REAL*4       EUTILB,EUTILA,EQVMINA,EQVMINB,EDIFF,MAXVAL
@@ -46,13 +47,14 @@ C--------------------------------------------------------------------
       CHARACTER*6  TPURP1,TDAY1,TPURP2,TDAY2
       CHARACTER*60 ALTNAME1,ALTNAME2
       CHARACTER*80 BASECASE,BUILDCASE,LRTIND,TRPOUT,CONTROL,USROUT
-      CHARACTER*80 CAPOUT,FDISTEQ
-      LOGICAL      EXISTS,NEG,INDMTX,NOTRN,BINFMT,MKTDIF
-      LOGICAL      OUTMTX,OUTWLK,CSORT,RHETT,LIZ,LJZ
+      CHARACTER*80 CAPOUT,FDISTEQ,NEMFILE
+      LOGICAL      EXISTS,NEG,INDMTX,NOTRN,MKTDIF,DISTONE
+      LOGICAL      OUTMTX,OUTWLK,CSORT,RHETT,LIZ,LJZ,NEM
       LOGICAL      BINOUT,CTLERR(2),TOPTEN,OUTCAP,DISTEQV
+      LOGICAL      MSEG(6),SFILTER
       DATA         YES/'Y','y'/
-      NAMELIST  /PARAMS/ MAXVAL,SIZ,SJZ,NEG,NOTRN,BINFMT,OUTWLK,
-     *                   TOPTEN,DIZ,DJZ
+      NAMELIST  /PARAMS/ MAXVAL,SIZ,SJZ,NEG,NOTRN,OUTWLK,
+     *                   TOPTEN,DIZ,DJZ,DISTONE,MSEG
       ZIZ=0
       WMAXPRICE=0.0
       WMINPRICE=0.0
@@ -62,7 +64,24 @@ C--------------------------------------------------------------------
       WMINBENEF=0.0
       DMAXBENEF=0.0
       DMINBENEF=0.0
-      TOTVAL=0.0
+      TOTVAL=0.0     
+      DRECNUM=0
+      WRECNUM=0
+      ERIDERSW=0.0
+      ERIDERSD=0.0
+      TERIDERS=0.0
+      QIZ=0
+      QJZ=0
+      RHETT=.FALSE.
+      BINOUT=.FALSE.
+      OUTCAP=.FALSE.
+      DIZ=0
+      DJZ=0
+      DISTONE=.FALSE.
+      DIST=0
+      SIZ=0
+      SJZ=0
+      MSEG=.TRUE.
 C
 C     OPEN AND READ THE CONTROL FILE
 C
@@ -80,7 +99,8 @@ C
      *       'FILE')
       STOP 8
    91 CALL RDFILES(CTLERR(1),INDMTX,BASECASE,BUILDCASE,LRTIND,TRPOUT,
-     *             USROUT,CAPOUT,OUTCAP,FDISTEQ)
+     *           USROUT,CAPOUT,OUTCAP,FDISTEQ,IEQUIV,EQUIV,NEMFILE,NEM,
+     *           DFILTER,SFILTER)
       REWIND 10
       READ(10,PARAMS,ERR=9)
       REWIND 10
@@ -96,16 +116,20 @@ C
      *            ' PARAMETERS'/)
       STOP 16
       END IF
-      WRITE(26,9701) MAXVAL,SIZ,SJZ,NEG,NOTRN,OUTWLK,TOPTEN,DIZ,DJZ
- 9701 FORMAT(/1X,'MAXVAL=',F4.0,' TRANSIT PRICE THRESHOLD'/,
-     *       1X,'SIZ   =',I4,' SELECTED ORIGIN ZONE'/
-     *       1X,'SJZ   =',I4,' SELECTED DESTINATION ZONE'/
-     *       1X,'NEG   =',3X,L1,' REMOVE NEGATIVE BENEFITS'/
-     *       1X,'NOTRN =',3X,L1,' NO TRANSIT TO TRANSIT MATRIX'/
-     *       1X,'OUTWLK=',3X,L1,' WALK/DRIVE TRIP OUTPUT'/
-     *       1X,'TOPTEN=',3X,L1,' GENERATE TOP TEN POSITIVE'/
-     *       1X,'DIZ   =',I4,' SELECTED ORIGIN DISTRICT'/
-     *       1X,'DJZ   =',I4,' SELECTED DESTINATION DISTRICT'/)
+      WRITE(26,9701) MAXVAL,SIZ,SJZ,NEG,NOTRN,OUTWLK,TOPTEN,DIZ,DJZ,
+     *               DISTONE,MSEG
+ 9701 FORMAT(/1X,'MAXVAL =',F5.0,T40,' TRANSIT PRICE THRESHOLD'/,
+     *       1X,'SIZ    =',I4,T40,' SELECTED ORIGIN ZONE'/
+     *       1X,'SJZ    =',I4,T40,' SELECTED DESTINATION ZONE'/
+     *       1X,'NEG    =',3X,L1,T40,' REMOVE NEGATIVE BENEFITS'/
+     *       1X,'NOTRN  =',3X,L1,T40,' NO TRANSIT TO TRANSIT MATRIX'/
+     *       1X,'OUTWLK =',3X,L1,T40,' WALK/DRIVE TRIP OUTPUT'/
+     *       1X,'TOPTEN =',3X,L1,T40,' GENERATE TOP TEN POSITIVE'/
+     *       1X,'DIZ    =',I4,T40,' SELECTED ORIGIN DISTRICT'/
+     *       1X,'DJZ    =',I4,T40,' SELECTED DESTINATION DISTRICT'/
+     *       1X,'DISTONE=',3X,L1,T40,' ONE ZONE PER DISTRICT'/
+     *       1X,'MSEG   =',3X,L1,5(1X,L1),T40,
+     *                   ' MARKET SEGMENT SELECTION'/)
 	    IF(NEG) WRITE(*,9022)
 	    IF(NEG) WRITE(26,9022)
  9022 FORMAT(/1X,'All Negative User Benefit Interchanges',
@@ -114,6 +138,9 @@ C
 C SET MAXIMUM VALUE INDICATORS
 C
       IF(MAXVAL.GT.0) VAL=MAXVAL
+C
+      IF(SIZ.GT.0) SIZ=EQUIV(SIZ)
+      IF(SJZ.GT.0) SJZ=EQUIV(SJZ)
 C
 C VERIFY EXISTENCE OF INPUT FILES
 C
@@ -142,7 +169,12 @@ C
       IF(EXISTS) THEN
       DISTEQV=.TRUE.
       OPEN(23,FILE=FDISTEQ,STATUS='OLD',FORM='FORMATTED')
- 9616 READ(23,*,END=9618) ZONE,DIST
+ 9616 CONTINUE
+      IF(DISTONE) THEN
+      READ(23,*,END=9618) ZONE,DIST(1)
+      ELSE
+      READ(23,*,END=9618) ZONE,DIST
+      END IF
       IF(ZONE.LE.0) GO TO 9618
       DISTEQ(DIST(1))=ZONE
       DO 9619 K=2,13
@@ -176,7 +208,7 @@ C
       IF(OUTCAP) THEN
       OPEN(12,FILE=CAPOUT,STATUS='UNKNOWN',FORM='BINARY')
       END IF
-      IF(INDMTX.AND.(.NOT.BINFMT)) THEN
+      IF(INDMTX) THEN
       OPEN(11,FILE=LRTIND,STATUS='OLD',FORM='UNFORMATTED')
       READ(11) HEAD1,HEAD2
        IF(NUMPUR.NE.2) THEN
@@ -200,18 +232,6 @@ C
        OPEN(35,FILE='MODEIND.ASC',STATUS='UNKNOWN',
      *         FORM='FORMATTED')
       END IF
-      IF(INDMTX.AND.BINFMT) THEN
-      OPEN(11,FILE=LRTIND,STATUS='OLD',FORM='BINARY')
-      WRITE(26,7208) LRTIND
- 7208 FORMAT(//2X,'PRIMARY MODE INDICATOR MATRIX FILE INFORMATION',/
-     *         2X,'----------------------------------------------',/
-     *       2X,'INPUT FILE NAME=',A40,' BINARY FORMAT'/,
-     *       2X,'***** NOT CURRENTLY IMPLEMENTED *****')
-      WRITE(*,7208) LRTIND
-      STOP 8
-      OPEN(35,FILE='MODEIND.ASC',STATUS='UNKNOWN',
-     *         FORM='FORMATTED')
-      END IF
       OPEN(27,FILE='USERBENC.ERR',STATUS='UNKNOWN',
      *        FORM='FORMATTED')
       OPEN(28,FILE='ZEROSHR.RPT',STATUS='UNKNOWN',
@@ -227,9 +247,9 @@ C
      *        FORM='FORMATTED')
       WRITE(29,17)
    17 FORMAT(' THE FOLLOWING RECORDS HAVE A MARKET SHARE GREATER',
-     *       ' THAN 1.0 OR A TRANSIT SHARE GREATER THAN 0.99'/
+     *       ' THAN 1.0'/
      *       ' -------------------------------------------------',
-     *       '----------------------------------------------'/)
+     *       '---------'/)
       OPEN(30,FILE='MKTDIFF.RPT',STATUS='UNKNOWN',
      *        FORM='FORMATTED')
       WRITE(30,18)
@@ -276,8 +296,6 @@ C
      *       '-------------------------------'/)
       IF(NOTRN) OPEN(36,FILE='NOTRN.ASC',STATUS='UNKNOWN',
      *          FORM='FORMATTED')
-      OPEN(37,FILE='HARPER.RPT',STATUS='UNKNOWN', 
-     *          FORM='FORMATTED')
       IF(INDMTX) THEN
       OPEN(38,FILE='NOLRT.RPT',STATUS='UNKNOWN',
      *        FORM='FORMATTED')
@@ -299,14 +317,19 @@ C
       OUTMTX=.TRUE.
       END IF
       IF((SIZ.GT.0.AND.SJZ.LE.0).OR.(SIZ.LE.0.AND.SJZ.GT.0)) THEN
-      OPEN(41,FILE='FUSSELL.RPT',STATUS='UNKNOWN',FORM='FORMATTED')
+      TOPTEN=.FALSE.
+      OPEN(41,FILE='SELZONE_TOPTEN.RPT',STATUS='UNKNOWN',
+     *        FORM='FORMATTED')
       RHETT=.TRUE.
       IF(SIZ.GT.0.AND.SJZ.LE.0) LIZ=.TRUE.
       IF(SIZ.LE.0.AND.SJZ.GT.0) LJZ=.TRUE.
-      OPEN(42,FILE='HARPER_DETAIL.RPT',STATUS='UNKNOWN',
+C     OPEN(42,FILE='SELZONE_DETAIL.RPT',STATUS='UNKNOWN',
+C    *        FORM='FORMATTED')
+      OPEN(43,FILE='SELZONE_DETAIL.CSV',STATUS='UNKNOWN',
      *        FORM='FORMATTED')
-      OPEN(43,FILE='HARPER_SUMMARY.RPT',STATUS='UNKNOWN',
-     *        FORM='FORMATTED')
+      WRITE(43,21)
+   21 FORMAT('PZONE,AZONE,MKTSEG,PER_TRIPS,WALK_DRIVE_BEN,',
+     *       'DRIVE_ONLY_BEN')
       END IF
 C
 C READ HEADER FILES & COMPARE
@@ -384,6 +407,7 @@ C --------------------------------------------------
       ZIZ=BIZ
       END IF
  8002 FORMAT(1X,'Processing Origin Zone ',I4)
+      IF(.NOT.MSEG(BKC)) GO TO 1
       IF(BIZ.NE.AIZ.OR.BJZ.NE.AJZ.OR.BKC.NE.AKC) THEN
       WRITE(26,9052) BIZ,BJZ,BKC,AIZ,AJZ,AKC
  9052 FORMAT(' INCONSISTENT RECORD MATCH',1X,
@@ -395,20 +419,12 @@ C --------------------------------------------------
 C
 C READ MODAL INDICATOR MATRICES
 C
-      IF(BIZ.GT.IZ.AND.INDMTX.AND.(.NOT.BINFMT)) THEN
+      IF(BIZ.GT.IZ.AND.INDMTX) THEN
       IZ=BIZ
       PURP=1
 	    CALL INTAB(11,MDEWLK,IZ,PURP,DUMMY,IO)
 	    PURP=2
 	    IF(NUMPUR.EQ.2) CALL INTAB(11,MDEDRV,IZ,PURP,DUMMY,IO)
-	    END IF
-	    IF(BIZ.GT.IZ.AND.INDMTX.AND.(BINFMT)) THEN
-      IZ=BIZ
-      READ(11) IZ,(INDLRT(K),K=1,NZON1)
-      DO 32 K=1,NZON1
-      MDEWLK(K)=INDLRT(K)
-      MDEDRV(K)=INDLRT(K)
-   32 CONTINUE
 	    END IF
 C
 C OUTPUT USER BENEFIT VALUES FOR PREVIOUS ROW NOW COMPLETED
@@ -446,18 +462,27 @@ C
       IIZ=DISTEQ(BIZ)
       IJZ=DISTEQ(BJZ)
       IF(DIZ.NE.IIZ.OR.DJZ.NE.IJZ) GO TO 1
-      END IF        
+      END IF     
+C 
+C FILTER RESULTS (IF FILTER FILE PROVIDED)
+C
+      IF(SFILTER) THEN
+      IIZ=DISTEQ(BIZ)
+      IJZ=DISTEQ(BJZ)
+      IF(DFILTER(IIZ,IJZ).LT.1) GO TO 1
+      END IF
 C--------------------------------------------------------------
 C
 C SELECTED INTERCHANGE PRINT
 C
       IF(SIZ.EQ.BIZ.AND.SJZ.EQ.BJZ) THEN
-      WRITE(26,7001) BIZ,BJZ,BKC,((BLSUM(K),ALSUM(K)),K=2,7)
+      WRITE(26,7001) IEQUIV(BIZ),IEQUIV(BJZ),BKC,
+     *              ((BLSUM(K),ALSUM(K)),K=2,7)
  7001 FORMAT(//' BASIC INPUT DATA SUMMARY'/
      *         ' ------------------------'/
      *       ' IZ=',I4,' JZ=',I4,' BKC=',I1/
      *       ' PER  TRP=',2X,F15.6,2X,F15.6/
-     *       ' AUTO EXP=',2X,E15.3,2X,E15.3/
+     *       ' AUTO EXP=',2X,F15.6,2X,F15.6/
      *       ' WPER MKT=',2X,F15.2,2X,F15.2/
      *       ' WALK SHR=',2X,F15.6,2X,F15.6/
      *       ' DPER MKT=',2X,F15.2,2X,F15.2/
@@ -549,33 +574,33 @@ C     NTDRV=IFIX(BLSUM(1)*BLSUM(4)*ALSUM(7)*1000.0) --> Error discoverd by Chris
 C
 C CHECK FOR ERRORS IN MARKET PROPORTION VALUES
 C
-      IF(BLSUM(4).GT.1.0) WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
-      IF(BLSUM(5).GT.0.99.AND.(BLSUM(1)*BLSUM(4)).GT.0) THEN
-      WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
+      IF(BLSUM(4).GT.1.01) WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
+C     IF(BLSUM(5).GT.0.99.AND.(BLSUM(1)*BLSUM(4)).GT.0) THEN
+C     WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
 C      BLSUM(5)=0.99
-      END IF
-      IF(BLSUM(5).GE.1.0) BLSUM(5)=0.99999
-      IF(BLSUM(6).GT.1.0) WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
-      IF(BLSUM(7).GT.0.99.AND.(BLSUM(1)*BLSUM(6)).GT.0) THEN
-      WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
+C     END IF
+      IF(BLSUM(5).GE.0.99) BLSUM(5)=0.99
+      IF(BLSUM(6).GT.1.01) WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
+C     IF(BLSUM(7).GT.0.99.AND.(BLSUM(1)*BLSUM(6)).GT.0) THEN
+C     WRITE(29,8001) BIZ,BJZ,BKC,BLSUM,ALSUM
 C      BLSUM(7)=0.99
-      END IF
-      IF(BLSUM(7).GE.1.0) BLSUM(7)=0.99999
+C     END IF
+      IF(BLSUM(7).GE.0.99) BLSUM(7)=0.99
  8001 FORMAT(' IZ=',I4,' JZ=',I4,' MRK=',I1,
      *       ' BLSUM=',2F10.5,F10.6,4F10.5/
      *    23X,'ALSUM=',2F10.5,F10.6,4F10.5)
-      IF(ALSUM(4).GT.1.0) WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
-      IF(ALSUM(5).GT.0.99.AND.(ALSUM(1)*ALSUM(4)).GT.0) THEN
-      WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
+      IF(ALSUM(4).GT.1.01) WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
+C     IF(ALSUM(5).GT.0.99.AND.(ALSUM(1)*ALSUM(4)).GT.0) THEN
+C     WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
 C      ALSUM(5)=0.99
-      END IF
-      IF(ALSUM(5).GE.1.0) ALSUM(5)=0.99999
-      IF(ALSUM(6).GT.1.0) WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
-      IF(ALSUM(7).GT.0.99.AND.(ALSUM(1)*ALSUM(6)).GT.0) THEN
-      WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
+C     END IF
+      IF(ALSUM(5).GE.0.99) ALSUM(5)=0.99
+      IF(ALSUM(6).GT.1.01) WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
+C     IF(ALSUM(7).GT.0.99.AND.(ALSUM(1)*ALSUM(6)).GT.0) THEN
+C     WRITE(29,8003) AIZ,AJZ,AKC,ALSUM,BLSUM
 C      ALSUM(7)=0.99
-      END IF
-      IF(ALSUM(7).GE.1.0) ALSUM(7)=0.99999
+C     END IF
+      IF(ALSUM(7).GE.0.99) ALSUM(7)=0.99
  8003 FORMAT(' IZ=',I4,' JZ=',I4,' MRK=',I1,
      *       ' ALSUM=',2F10.5,F10.6,4F10.5/
      *    23X,'BLSUM=',2F10.5,F10.6,4F10.5) 
@@ -649,7 +674,8 @@ C
 C -----------------------------------------------------------------
       IF(SIZ.EQ.BIZ.AND.SJZ.EQ.BJZ) THEN
       WPERSON=BLSUM(2)*BLSUM(4)
-      WRITE(26,8013) BIZ,BJZ,BKC,WPERSON,EUTILB,EUTILA,
+      WRITE(26,8013) IEQUIV(BIZ),IEQUIV(BJZ),BKC,
+     *               WPERSON,EUTILB,EUTILA,
      *               EQVMINB,EQVMINA,EDIFF,
      *               TUTILB,TUTILA,TEQVMINB,
      *               TEQVMINA,TDIFF
@@ -725,7 +751,8 @@ C
 C ---------------------------------------------------------
       IF(SIZ.EQ.BIZ.AND.SJZ.EQ.BJZ) THEN
       DPERSON=BLSUM(2)*BLSUM(6)
-      WRITE(26,8014) BIZ,BJZ,BKC,DPERSON,EUTILB,EUTILA,
+      WRITE(26,8014) IEQUIV(BIZ),IEQUIV(BJZ),BKC,
+     *               DPERSON,EUTILB,EUTILA,
      *               EQVMINB,EQVMINA,EDIFF,
      *               TUTILB,TUTILA,TEQVMINB,
      *               TEQVMINA,TDIFF
@@ -772,6 +799,7 @@ C
 	END IF
 C
 C COMPUTE USER BENEFITS FOR REMAINING, NEW AND LOST TRANSIT RIDERS
+C WALK/DRIVE MARKET SEGMENT
 C
       WBENEF=WPPRICE*BLSUM(1)*BLSUM(4)
       IF(WBENEF.GE.0) THEN
@@ -923,8 +951,7 @@ C
  7400  CONTINUE
        IF((WBENEF.GT.ZMINBP(10).AND.
      *   ((LIZ.AND.(SIZ.EQ.BIZ)).OR.(LJZ.AND.(SJZ.EQ.BJZ))))
-     *    .OR.(WBENEF.GT.ZMINBP(10).AND.TOPTEN).AND.
-     *     (WTPRICE.GT.MAXVAL)) THEN
+     *    .OR.(WBENEF.GT.ZMINBP(10).AND.TOPTEN)) THEN
        ZMINBP(10)=WBENEF
        XMINBP(10)=WTPRICE
        ZMINP(10,1)=BIZ
@@ -953,6 +980,9 @@ C
  7422  CONTINUE
        IF(CSORT) GO TO 7421
        END IF
+C
+C COMPUTE USER BENEFITS FOR REMAINING, NEW AND LOST TRANSIT RIDERS
+C MUST DRIVE MARKET SEGMENT
 C
       DBENEF=DPPRICE*BLSUM(1)*BLSUM(6)
       IF(DBENEF.GE.0) THEN
@@ -1109,8 +1139,7 @@ C
  7500  CONTINUE
        IF((DBENEF.GT.Z2MINBP(10).AND.
      *   ((LIZ.AND.(SIZ.EQ.BIZ)).OR.(LJZ.AND.(SJZ.EQ.BJZ))))
-     *    .OR.(DBENEF.GT.Z2MINBP(10).AND.TOPTEN).AND.
-     *     (DTPRICE.GT.MAXVAL)) THEN
+     *    .OR.(DBENEF.GT.Z2MINBP(10).AND.TOPTEN)) THEN
        Z2MINBP(10)=DBENEF
        X2MINBP(10)=DTPRICE
        Z2MINP(10,1)=BIZ
@@ -1195,18 +1224,17 @@ C --------------------------------------------------------
       IF(WERIDERS.NE.0) R1=WEUSER/WERIDERS
       IF(WNRIDERS.NE.0) R2=WNUSER/WNRIDERS
       IF(WLRIDERS.NE.0) R3=WLUSER/WLRIDERS
-      IF(WBENEF.GT.0.OR.DBENEF.GT.0) THEN
-      WRITE(42,8991) BIZ,BJZ,BKC,BLSUM(1)
+      IF(WBENEF.NE.0.OR.DBENEF.NE.0) THEN
+C     WRITE(42,8991) BIZ,BJZ,BKC,BLSUM(1)
  8991 FORMAT(' IZ=',I4,' JZ=',I4,' K=',I1,' TOTAL PERSON TRIPS',F10.4)
-      WRITE(42,8114) WPPRICE,WTPRICE,WBENEF,WEUSER,R1,
-     *               WNUSER,R2,WLUSER,R3,
-     *               WERIDERS,WNRIDERS,WLRIDERS,
-     *               DPPRICE,DTPRICE,DBENEF,DEUSER,DNUSER,DLUSER,
-     *               DERIDERS,DNRIDERS,DLRIDERS,
-     *               MDEWLK(BJZ),MDEDRV(BJZ)
+C     WRITE(42,8114) WPPRICE,WTPRICE,WBENEF,WEUSER,R1,
+C    *               WNUSER,R2,WLUSER,R3,
+C    *               WERIDERS,WNRIDERS,WLRIDERS,
+C    *               DPPRICE,DTPRICE,DBENEF,DEUSER,DNUSER,DLUSER,
+C    *               DERIDERS,DNRIDERS,DLRIDERS,
+C    *               MDEWLK(BJZ),MDEDRV(BJZ)
       WRITE(43,8992) BIZ,BJZ,BKC,BLSUM(1),WBENEF,DBENEF
- 8992 FORMAT(' IZ=',I4,' JZ=',I4,' K=',I1,' PERSON TRIPS',F10.4,
-     *       ' WALK/DRIVE BEN=',F12.6,' DRIVE ONLY BEN=',F12.6)
+ 8992 FORMAT(I4,',',I4,',',I1,',',F10.4,2(',',F12.6))
       END IF
       END IF
 C ---------------------------------------------------------------------
@@ -1250,6 +1278,7 @@ C
       END IF
       GO TO 1
   200 CONTINUE
+      IF(NEG) GO TO 3000
       IF(MKTDIF) THEN
       WRITE(26,8805)
  8805 FORMAT(//,' **********************************************',
@@ -1260,23 +1289,52 @@ C
      *          ' **********************************************',
      *          '***************************'//)
       END IF
-      WRITE(26,8012) WRECNUM,WMAXP,WMAXPRICE,WMINP,WMINPRICE,
-     *               DRECNUM,DMAXP,DMAXPRICE,DMINP,DMINPRICE
- 8012 FORMAT(/,1X,I6,' RECORDS HAD WALK/DRIVE PRICE DIFF BEYOND ',
+      DO K=1,2
+      IF(WMAXP(K).LE.0) WMAXP(K)=4000
+      IF(DMAXP(K).LE.0) DMAXP(K)=4000
+      IF(WMAXB(K).LE.0) WMAXB(K)=4000
+      IF(DMAXB(K).LE.0) DMAXB(K)=4000
+      IF(WMINP(K).LE.0) WMINP(K)=4000
+      IF(DMINP(K).LE.0) DMINP(K)=4000
+      IF(WMINB(K).LE.0) WMINB(K)=4000
+      IF(DMINB(K).LE.0) DMINB(K)=4000
+      DO K1=1,10
+      IF(IMINB(K1,K).LE.0) IMINB(K1,K)=4000
+      IF(IMIND(K1,K).LE.0) IMIND(K1,K)=4000
+      IF(ZMINB(K1,K).LE.0) ZMINB(K1,K)=4000
+      IF(ZMINP(K1,K).LE.0) ZMINP(K1,K)=4000
+      IF(Z2MINB(K1,K).LE.0) Z2MINB(K1,K)=4000
+      IF(Z2MINP(K1,K).LE.0) Z2MINP(K1,K)=4000
+      END DO
+      END DO
+      WRITE(26,8012) WRECNUM,IEQUIV(WMAXP(1)),IEQUIV(WMAXP(2)),
+     *               WMAXP(3),
+     *               WMAXPRICE,IEQUIV(WMINP(1)),IEQUIV(WMINP(2)),
+     *               WMINP(3),WMINPRICE,
+     *               DRECNUM,IEQUIV(DMAXP(1)),IEQUIV(DMAXP(2)),
+     *               DMAXP(3),DMAXPRICE,
+     *               IEQUIV(DMINP(1)),IEQUIV(DMINP(2)),DMINP(3),
+     *               DMINPRICE
+ 8012 FORMAT(/,1X,I8,' RECORDS HAD WALK/DRIVE PRICE DIFF BEYOND ',
      *               'THRESHOLD'/,
      *         1X,'MAXPRICE FOUND AT IZ=',I4,' JZ=',I4,' K=',I1,
      *            ' PRICE=',F10.2/
      *         1X,'MINPRICE FOUND AT IZ=',I4,' JZ=',I4,' K=',I1,
      *            ' PRICE=',F10.2/
-     *       /,1X,I6,' RECORDS HAD MUST DRIVE PRICE DIFF BEYOND ',
+     *       /,1X,I8,' RECORDS HAD MUST DRIVE PRICE DIFF BEYOND ',
      *               'THRESHOLD'/,
      *         1X,'MAXPRICE FOUND AT IZ=',I4,' JZ=',I4,' K=',I1,
      *            ' PRICE=',F10.2/
      *         1X,'MINPRICE FOUND AT IZ=',I4,' JZ=',I4,' K=',I1,
      *            ' PRICE=',F10.2/)
      
-      WRITE(26,8312) WMAXB,WMAXBENEF,WMINB,WMINBENEF,
-     *               DMAXB,DMAXBENEF,DMINB,DMINBENEF
+      WRITE(26,8312) IEQUIV(WMAXB(1)),IEQUIV(WMAXB(2)),WMAXB(3),
+     *               WMAXBENEF,IEQUIV(WMINB(1)),IEQUIV(WMINB(2)),
+     *               WMINB(3),WMINBENEF,
+     *               IEQUIV(DMAXB(1)),IEQUIV(DMAXB(2)),DMAXB(3),
+     *               DMAXBENEF,
+     *               IEQUIV(DMINB(1)),IEQUIV(DMINB(2)),DMINB(3),
+     *               DMINBENEF
  8312 FORMAT(/,1X,' TOTAL USER BENEFIT SUMMARY FOR WALK/DRIVE'/,
      *         1X,'MAXBENEF FOUND AT IZ=',I4,' JZ=',I4,' K=',I1,
      *            ' VALUE=',F10.2/
@@ -1293,7 +1351,8 @@ C
      *       ' ------------------------------------------',
      *       '----------------')
       DO 7110 JZ=1,10
-      WRITE(26,9097) IMINB(JZ,1),IMINB(JZ,2),IMINB(JZ,3),WMINBF(JZ)
+      WRITE(26,9097) IEQUIV(IMINB(JZ,1)),IEQUIV(IMINB(JZ,2)),
+     *               IMINB(JZ,3),WMINBF(JZ)
  9097 FORMAT(' IZ=',I4,' JZ=',I4,' K=',I1,' VALUE=',F10.2)
 90979 FORMAT(' IZ=',I4,' JZ=',I4,' K=',I1,' VALUE=',F10.2,
      *       '      PRICE CHANGE=',F10.2)
@@ -1304,42 +1363,47 @@ C
      *       ' ------------------------------------------',
      *       '----------------')
       DO 7210 JZ=1,10
-      WRITE(26,9097) IMIND(JZ,1),IMIND(JZ,2),IMIND(JZ,3),DMINBF(JZ)
+      WRITE(26,9097) IEQUIV(IMIND(JZ,1)),IEQUIV(IMIND(JZ,2)),
+     *               IMIND(JZ,3),DMINBF(JZ)
  7210 CONTINUE
       IF(RHETT) THEN
       IF(LIZ) QIZ=SIZ
       IF(LJZ) QIZ=SJZ
-      WRITE(41,9098) QIZ
+      WRITE(41,9098) IEQUIV(QIZ)
  9098 FORMAT(//' TOP TEN NEGATIVE USER BENEFIT INTERCHANGES',
      *       ' FOR WALK/DRIVE ACCESS FOR ZONE ',I4/
      *       ' ------------------------------------------',
      *       '------------------------------------')
       DO 7410 JZ=1,10
-      WRITE(41,9097) ZMINB(JZ,1),ZMINB(JZ,2),ZMINB(JZ,3),ZMINBF(JZ)
+      WRITE(41,9097) IEQUIV(ZMINB(JZ,1)),IEQUIV(ZMINB(JZ,2)),
+     *               ZMINB(JZ,3),ZMINBF(JZ)
  7410 CONTINUE
-      WRITE(41,9198) QIZ
+      WRITE(41,9198) IEQUIV(QIZ)
  9198 FORMAT(//' TOP TEN POSITIVE USER BENEFIT INTERCHANGES',
      *       ' FOR WALK/DRIVE ACCESS FOR ZONE ',I4/
      *       ' ------------------------------------------',
      *       '------------------------------------')
       DO 7420 JZ=1,10
-      WRITE(41,9097) ZMINP(JZ,1),ZMINP(JZ,2),ZMINP(JZ,3),ZMINBP(JZ)
+      WRITE(41,9097) IEQUIV(ZMINP(JZ,1)),IEQUIV(ZMINP(JZ,2)),
+     *               ZMINP(JZ,3),ZMINBP(JZ)
  7420 CONTINUE
-      WRITE(41,9099) QIZ
+      WRITE(41,9099) IEQUIV(QIZ)
  9099 FORMAT(//' TOP TEN NEGATIVE USER BENEFIT INTERCHANGES',
      *       ' FOR MUST DRIVE ACCESS FOR ZONE ',I4/
      *       ' ------------------------------------------',
      *       '------------------------------------')
       DO 7510 JZ=1,10
-      WRITE(41,9097) Z2MINB(JZ,1),Z2MINB(JZ,2),Z2MINB(JZ,3),Z2MINBF(JZ)
+      WRITE(41,9097) IEQUIV(Z2MINB(JZ,1)),IEQUIV(Z2MINB(JZ,2)),
+     *               Z2MINB(JZ,3),Z2MINBF(JZ)
  7510 CONTINUE
-      WRITE(41,9199) QIZ
+      WRITE(41,9199) IEQUIV(QIZ)
  9199 FORMAT(//' TOP TEN POSITIVE USER BENEFIT INTERCHANGES',
      *       ' FOR MUST DRIVE ACCESS FOR ZONE ',I4/
      *       ' ------------------------------------------',
      *       '------------------------------------')
       DO 7520 JZ=1,10
-      WRITE(41,9097) Z2MINP(JZ,1),Z2MINP(JZ,2),Z2MINP(JZ,3),Z2MINBP(JZ)
+      WRITE(41,9097) IEQUIV(Z2MINP(JZ,1)),IEQUIV(Z2MINP(JZ,2)),
+     *               Z2MINP(JZ,3),Z2MINBP(JZ)
  7520 CONTINUE
       END IF
       IF(TOPTEN) THEN
@@ -1349,8 +1413,9 @@ C
      *       ' ------------------------------------------',
      *       '------------------------------------')
       DO 7431 JZ=1,10
-      WRITE(26,90979) ZMINP(JZ,1),ZMINP(JZ,2),ZMINP(JZ,3),ZMINBP(JZ),
-     *               XMINBP(JZ)
+      WRITE(26,90979) IEQUIV(ZMINP(JZ,1)),IEQUIV(ZMINP(JZ,2)),
+     *                ZMINP(JZ,3),ZMINBP(JZ),
+     *                XMINBP(JZ)
  7431 CONTINUE
       WRITE(26,91999)
 91999 FORMAT(//' TOP TEN POSITIVE USER BENEFIT INTERCHANGES',
@@ -1358,7 +1423,8 @@ C
      *       ' ------------------------------------------',
      *       '------------------------------------')
       DO 7531 JZ=1,10
-      WRITE(26,90979) Z2MINP(JZ,1),Z2MINP(JZ,2),Z2MINP(JZ,3),
+      WRITE(26,90979) IEQUIV(Z2MINP(JZ,1)),IEQUIV(Z2MINP(JZ,2)),
+     *     Z2MINP(JZ,3),
      *     Z2MINBP(JZ),X2MINBP(JZ)
  7531 CONTINUE
       END IF
@@ -1429,11 +1495,18 @@ C
      *       '   NEW     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
      *       '  LOST     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
      *       '            TOTAL     ',F10.2,5X,F10.2,5X,F10.2/)
-      WRITE(37,8303) UBEN(1,3,7),UBEN(2,3,7),UBEN(3,3,7),UBEN(4,3,7)
- 8303 FORMAT(' USER BENEFITS FOR REMAINING RIDERS=',F10.2/
-     *       '                   NEW       RIDERS=',F10.2/
-     *       '                   LOST      RIDERS=',F10.2/
-     *       '                   TOTAL     RIDERS=',F10.2/)
+      IF(NEM) THEN
+      OPEN(44,FILE=NEMFILE,STATUS='UNKNOWN',FORM='FORMATTED')
+      WRITE(44,8303) UBEN(1,1,7),UBEN(1,2,7),UBEN(1,3,7),
+     *               UBEN(2,1,7),UBEN(2,2,7),UBEN(2,3,7),
+     *               UBEN(3,1,7),UBEN(3,2,7),UBEN(3,3,7),
+     *               UBEN(4,1,7),UBEN(4,2,7),UBEN(4,3,7) 
+ 8303 FORMAT('TOTAL,WALK_DRIVE,MUST_DRIVE,TOTAL'/    
+     *       'REMAINING_RIDERS,',F10.2,',',F10.2,',',F10.2/
+     *       'NEW_RIDERS,',F10.2,',',F10.2,',',F10.2/
+     *       'LOST_RIDERS,',F10.2,',',F10.2,',',F10.2/
+     *       'TOTAL,',F10.2,',',F10.2,',',F10.2)      
+      END IF
 C
 C SUMMARIZE NUMBER OF EXISTING AND NEW TRANSIT RIDERS
 C
@@ -1483,12 +1556,7 @@ C
       TERIDERS=ERIDERSW+ERIDERSD
       WRITE(26,8404) ERIDERSW,ERIDERSD,TERIDERS
  8404 FORMAT(' EXISTING RIDERS      ',F10.2,5X,F10.2,5X,F10.2,
-     *       ' WITH NO CHANGE IN BENEFITS') 
-      WRITE(37,8403) TRID(1,3,7),TRID(2,3,7),TRID(3,3,7),TRID(4,3,7)
- 8403 FORMAT(' NUMBER OF         REMAINING RIDERS=',F10.2/
-     *       '                   NEW       RIDERS=',F10.2/
-     *       '                   LOST      RIDERS=',F10.2/
-     *       '                   TOTAL     RIDERS=',F10.2/)
+     *       ' WITH NO CHANGE IN BENEFITS')
 C
 C COMPUTE USER BENEFIT/PER TRIP
 C
@@ -1689,7 +1757,12 @@ C
      *       '----------------------------------')
       K=K-1
       IF(K.GT.0) WRITE(26,8802) (MKZONE(K1),K1=1,K)
- 8802 FORMAT(5X,10I5)  
+ 8802 FORMAT(5X,10I5) 
+ 3000 CONTINUE 
+      CALL GETTIM(IHR,IMIN,ISEC,I100)
+      WRITE(26,8104) IHR,IMIN,ISEC
+      WRITE(*,8104) IHR,IMIN,ISEC
+ 8104 FORMAT(/' Program Completed: ',I2,':',I2,':',I2)
       END
 C**********************************************************
 C   SUBROUTINE RDFILES: OBTAIN DATA SET NAMES FOR INPUT   *
@@ -1697,26 +1770,34 @@ C                       FILES                             *
 C**********************************************************
       SUBROUTINE RDFILES(CTLERR,INDMTX,BASECASE,BUILDCASE,
      *                   LRTIND,TRPOUT,USROUT,CAPOUT,OUTCAP,
-     *                   FDISTEQ)
-      LOGICAL      CTLERR,INDMTX,OUTCAP
-      INTEGER*4    IT,ST,TT,UT,VT,XT,LEN(8),RLEN
+     *                   FDISTEQ,IEQUIV,EQUIV,NEMFILE,NEM,
+     *                   DFILTER,SFILTER)
+      LOGICAL      CTLERR,INDMTX,OUTCAP,NEM
+      INTEGER*4    IT,ST,TT,UT,VT,XT,LEN(11),RLEN,IEQUIV(6000)
+      INTEGER*4    INDEX,ZONE,EQUIV(10000)
+      INTEGER*4    DFILTER(50,50),DVALUE,PDIST,DDIST
       CHARACTER*1  COMMA,BLANK
-      CHARACTER*10  FILES(8)
-      CHARACTER*80 NAMES(8)
+      CHARACTER*10 FILES(11)
+      CHARACTER*80 NAMES(11)
       CHARACTER*80 STRING
 	    CHARACTER*80 BASECASE,BUILDCASE,LRTIND,TRPOUT,USROUT
-	    CHARACTER*80 REPORT,CAPOUT,FDISTEQ
+	    CHARACTER*80 REPORT,CAPOUT,FDISTEQ,FEQUIV,NEMFILE,FILTER
+	    LOGICAL      EXISTS,SFILTER
       DATA         COMMA/','/,BLANK/' '/
       DATA         FILES/'BASECASE=','BUILDCASE=','LRTIND=',
      *                   'TRPOUT=','USROUT=','REPORT=',
-     *                   'CAPOUT=','FDISTEQ='/
-      DATA         NAMES/8*' '/
-      DATA         LEN/8,9,6,6,6,6,6,7/
+     *                   'CAPOUT=','FDISTEQ=','FEQUIV=',
+     *                   'NEMFILE=','FILTER='/
+      DATA         NAMES/11*' '/
+      DATA         LEN/8,9,6,6,6,6,6,7,6,7,6/
       CTLERR=.FALSE.
+      NEM=.FALSE.
+      SFILTER=.FALSE.
+      DFILTER=0
 C
 C SEARCH FOR ONE FILE NAME AT A TIME
 C
-      DO 100 IT=1,8
+      DO 100 IT=1,11
       REWIND 10
     1 READ(10,101,END=100) STRING
   101 FORMAT(A80)
@@ -1750,6 +1831,9 @@ C
       REPORT=NAMES(6)
       CAPOUT=NAMES(7)
       FDISTEQ=NAMES(8)
+      FEQUIV=NAMES(9)
+      NEMFILE=NAMES(10)
+      FILTER=NAMES(11)
       OPEN(26,FILE=REPORT,STATUS='UNKNOWN',
      *        FORM='FORMATTED')
 C
@@ -1757,8 +1841,7 @@ C WRITE PROGRAM BANNER, DATE & TIME
 C
       CALL GETDAT(IYR,IMON,IDAY)
       CALL GETTIM(IHR,IMIN,ISEC,I100)
-      IF(IYR.GT.2016) THEN
-      WRITE(26,9901) 
+      IF(IYR.GT.2019) THEN
  9901 FORMAT(/5x,' *** PROGRAM PERMISSION DATE HAS EXPIRED ***'/)
       WRITE(*,9901)
       STOP
@@ -1768,7 +1851,7 @@ C
  9006 FORMAT(/1X,'     TRANSIT USER BENEFIT'/
      *        1X,'  DATA INPUT COMPARISON PROGRAM'/
      *        1X,'        PROGRAM: USERBENC'/
-     *        1X,'        VERSION:  20Aug13'//
+     *        1X,'        VERSION:  12Aug19'//
      *        1X,'        Date:',I2,'/',I2,'/',I2/
      *        1X,'        Time:',I2,':',I2,':',I2//)
       WRITE(*,9006) IMON,IDAY,IYR,IHR,IMIN,ISEC
@@ -1776,7 +1859,7 @@ C
 C PRINT FILE INPUT/OUTPUT SUMMARY
 C
       WRITE(26,500) BASECASE,BUILDCASE,LRTIND,TRPOUT,USROUT,REPORT,
-     *              CAPOUT,FDISTEQ
+     *              CAPOUT,FDISTEQ,FEQUIV,NEMFILE,FILTER
   500 FORMAT(1X,'SUMMARY OF FILE INPUTS & OUTPUTS'/
      *       1X,'--------------------------------------------------'/
      *       1X,'BASECASE   ',a20,' BASELINE USER BENEFIT FILE'/
@@ -1787,17 +1870,71 @@ C
      *       1X,'USROUT     ',a20,' USER BENEFIT OUTPUT MATRIX'/,
      *       1X,'REPORT     ',A20,' STANDARD REPORT FILE'/
      *       1X,'CAPOUT     ',A20,' CAPPED BENEFIT MATRIX'/
-     *       1X,'FDISTEQ    ',A20,' DISTRICT/ZONE EQUIVALENCE FILE'/)
+     *       1X,'FDISTEQ    ',A20,' DISTRICT/ZONE EQUIVALENCE FILE'/
+     *       1X,'FEQUIV     ',A20,' EMME ZONE EQUIVALENCE'/
+     *       1X,'NEMFILE    ',A20,' TOTAL USER BENEFIT CSV FILE'/
+     *       1X,'FILTER     ',A20,' DISTRICT LEVEL FILTER FILE (CSV)')
 C
 C CHECK FOR PRESENCE OF PRIMARY MODE INDICATOR FILE ?
 C
       IF(NAMES(3).NE.BLANK) THEN
       INDMTX=.TRUE.
-      ELSE
+      ELSE     
+      INDMTX=.FALSE.
       WRITE(26,8002)
  8002 FORMAT(/1X,'RDFILES(W) 8002 FIXED-GUIDEWAY INDICATOR MATRIX',
      *           ' UNAVAILABLE'/)
       END IF
-      IF(NAMES(7).NE.BLANK) OUTCAP=.TRUE.
+      IF(NAMES(7).NE.BLANK) THEN
+      OUTCAP=.TRUE.
+      ELSE
+      OUTCAP=.FALSE.
+      END IF
+      IF(NAMES(10).NE.BLANK) THEN
+      NEM=.TRUE.
+      ELSE
+      NEM=.FALSE.
+      END IF
+c
+c external/internal zone equivalence
+c
+      inquire(file=fequiv,exist=exists)
+      if(.not.exists) then
+      do k=1,6000
+      iequiv(k)=k
+      equiv(k)=k
+      end do
+      iequiv(6000)=0
+      else
+      open(1,file=fequiv,status='old',form='formatted')
+      read(1,2) header
+    2 format(a80)
+  600 read(1,*,end=700) index,zone  
+      iequiv(index+1)=zone
+      equiv(zone)=index+1
+      go to 600
+  700 continue
+      close(1,status='keep')
+      end if
+c
+c district level filter file
+c
+      inquire(file=filter,exist=exists)
+      if(exists) then
+      sfilter=.true.
+      open(1,file=filter,status='old',form='formatted')
+  601 read(1,*,end=701) pdist,ddist,dvalue
+  602 format(i2,i3,i2)
+      if(pdist.le.0.or.pdist.gt.50.or.ddist.le.0.or.ddist.gt.50) then
+      write(26,603) pdist,ddist
+  603 format(' RDFILE 603 (F) ORIGIN DISTRICT(',I3,
+     * ') OR DESTINATION DISTRICT(',I3,') IS OUT OF RANGE')
+      stop 603
+      end if
+      dfilter(pdist,ddist)=dvalue
+      go to 601
+  701 continue
+      close(1,status='keep')
+      end if
       RETURN
       END
