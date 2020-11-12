@@ -51,10 +51,10 @@ C--------------------------------------------------------------------
       LOGICAL      EXISTS,NEG,INDMTX,NOTRN,MKTDIF,DISTONE
       LOGICAL      OUTMTX,OUTWLK,CSORT,RHETT,LIZ,LJZ,NEM
       LOGICAL      BINOUT,CTLERR(2),TOPTEN,OUTCAP,DISTEQV
-      LOGICAL      MSEG(6),SFILTER
+      LOGICAL      MSEG(6),SFILTER,EQAUTEXP
       DATA         YES/'Y','y'/
       NAMELIST  /PARAMS/ MAXVAL,SIZ,SJZ,NEG,NOTRN,OUTWLK,
-     *                   TOPTEN,DIZ,DJZ,DISTONE,MSEG
+     *                   TOPTEN,DIZ,DJZ,DISTONE,MSEG,EQAUTEXP
       ZIZ=0
       WMAXPRICE=0.0
       WMINPRICE=0.0
@@ -82,6 +82,7 @@ C--------------------------------------------------------------------
       SIZ=0
       SJZ=0
       MSEG=.TRUE.
+      EQAUTEXP=.FALSE.
 C
 C     OPEN AND READ THE CONTROL FILE
 C
@@ -117,19 +118,21 @@ C
       STOP 16
       END IF
       WRITE(26,9701) MAXVAL,SIZ,SJZ,NEG,NOTRN,OUTWLK,TOPTEN,DIZ,DJZ,
-     *               DISTONE,MSEG
+     *               DISTONE,MSEG,EQAUTEXP
  9701 FORMAT(/1X,'MAXVAL =',F5.0,T40,' TRANSIT PRICE THRESHOLD'/,
-     *       1X,'SIZ    =',I4,T40,' SELECTED ORIGIN ZONE'/
-     *       1X,'SJZ    =',I4,T40,' SELECTED DESTINATION ZONE'/
-     *       1X,'NEG    =',3X,L1,T40,' REMOVE NEGATIVE BENEFITS'/
-     *       1X,'NOTRN  =',3X,L1,T40,' NO TRANSIT TO TRANSIT MATRIX'/
-     *       1X,'OUTWLK =',3X,L1,T40,' WALK/DRIVE TRIP OUTPUT'/
-     *       1X,'TOPTEN =',3X,L1,T40,' GENERATE TOP TEN POSITIVE'/
-     *       1X,'DIZ    =',I4,T40,' SELECTED ORIGIN DISTRICT'/
-     *       1X,'DJZ    =',I4,T40,' SELECTED DESTINATION DISTRICT'/
-     *       1X,'DISTONE=',3X,L1,T40,' ONE ZONE PER DISTRICT'/
-     *       1X,'MSEG   =',3X,L1,5(1X,L1),T40,
-     *                   ' MARKET SEGMENT SELECTION'/)
+     *       1X,'SIZ     =',I4,T40,' SELECTED ORIGIN ZONE'/
+     *       1X,'SJZ     =',I4,T40,' SELECTED DESTINATION ZONE'/
+     *       1X,'NEG     =',3X,L1,T40,' REMOVE NEGATIVE BENEFITS'/
+     *       1X,'NOTRN   =',3X,L1,T40,' NO TRANSIT TO TRANSIT MATRIX'/
+     *       1X,'OUTWLK  =',3X,L1,T40,' WALK/DRIVE TRIP OUTPUT'/
+     *       1X,'TOPTEN  =',3X,L1,T40,' GENERATE TOP TEN POSITIVE'/
+     *       1X,'DIZ     =',I4,T40,' SELECTED ORIGIN DISTRICT'/
+     *       1X,'DJZ     =',I4,T40,' SELECTED DESTINATION DISTRICT'/
+     *       1X,'DISTONE =',3X,L1,T40,' ONE ZONE PER DISTRICT'/
+     *       1X,'MSEG    =',3X,L1,5(1X,L1),T40,
+     *                   ' MARKET SEGMENT SELECTION'/
+     *       1X,'EQAUTEXP=',3X,L1,T40,' SET NON TRN EXP UTIL',
+     *          ' EQUAL TO THE BASE'/)
 	    IF(NEG) WRITE(*,9022)
 	    IF(NEG) WRITE(26,9022)
  9022 FORMAT(/1X,'All Negative User Benefit Interchanges',
@@ -417,6 +420,12 @@ C --------------------------------------------------
       STOP 9052
       END IF 
 C
+C EVALUATE NON-TRANSIT EXPONENTIATED UTILITY
+C
+      IF((EQAUTEXP).AND.(BLSUM(3).NE.ALSUM(3))) THEN
+      ALSUM(3)=BLSUM(3)
+      END IF
+C
 C READ MODAL INDICATOR MATRICES
 C
       IF(BIZ.GT.IZ.AND.INDMTX) THEN
@@ -517,7 +526,7 @@ C
      *    BLSUM(4).GT.0) THEN
         WRITE(28,8009) BIZ,BJZ,BKC,BLSUM(5),ALSUM(5),BLSUM(1),BLSUM(4)
  8009   FORMAT(' IZ=',I4,' JZ=',I4,' K=',I1,
-     *         ' BASE PROB=',E10.4,' BUILD PROB=',E10.4,
+     *         ' BASE PROB=',E12.4,' BUILD PROB=',E12.4,
      *         ' TOTAL PERSON TRIPS=',F8.4,' WALK/DRIVE MARKET SHARE=',
      *          F8.4)
        IF(NEG) ALSUM(5)=BLSUM(5)
@@ -531,7 +540,7 @@ C        BLSUM(5)=ALSUM(5)
      *    BLSUM(6).GT.0) THEN
         WRITE(28,8010) BIZ,BJZ,BKC,BLSUM(7),ALSUM(7),BLSUM(1),BLSUM(6)
  8010   FORMAT(' IZ=',I4,' JZ=',I4,' K=',I1,
-     *         ' BASE PROB=',E10.4,' BUILD PROB=',E10.4,
+     *         ' BASE PROB=',E12.4,' BUILD PROB=',E12.4,
      *         ' TOTAL PERSON TRIPS=',F8.4,
      *         ' DRIVE ONLY MARKET SHARE=',F8.4)
        IF(NEG) ALSUM(7)=BLSUM(7)
@@ -1184,27 +1193,27 @@ C --------------------------------------------------------
      *               MDEWLK(BJZ),MDEDRV(BJZ)
  8114 FORMAT(' SUMMARY OF USER BENEFIT COMPUTATIONS'/
      *       ' ------------------------------------'/
-     *       ' WALK  MARKET - TOTAL CHANGE IN PRICE    =',E10.4/
-     *       '              - TRANSIT PRICE CHANGE     =',E10.4/
-     *       '              - TOTAL USER BENEFITS      =',E10.4/
-     *       '              - REMAINING RIDER BENEFITS =',E10.4/
-     *       '                                PER TRIP =',F10.4/
-     *       '              - NEW  RIDER BENEFITS      =',E10.4/
-     *       '                                PER TRIP =',F10.4/
-     *       '              - LOST RIDER BENEFITS      =',E10.4/
-     *       '                                PER TRIP =',F10.4/
-     *       '              - REMAINING RIDERS         =',E10.4/
-     *       '              - NEW RIDERS               =',E10.4/
-     *       '              - LOST RIDERS              =',E10.4/
-     *       ' DRIVE MARKET - TOTAL CHANGE IN PRICE    =',E10.4/
-     *       '              - TRANSIT PRICE CHANGE     =',E10.4/
-     *       '              - TOTAL USER BENEFITS      =',E10.4/
-     *       '              - REMAINING RIDER BENEFITS =',E10.4/
-     *       '              - NEW  RIDER BENEFITS      =',E10.4/
-     *       '              - LOST RIDER BENEFITS      =',E10.4/
-     *       '              - REMAINING RIDERS         =',E10.4/
-     *       '              - NEW RIDERS               =',E10.4/
-     *       '              - LOST RIDERS              =',E10.4//
+     *       ' WALK  MARKET - TOTAL CHANGE IN PRICE    =',E12.4/
+     *       '              - TRANSIT PRICE CHANGE     =',E12.4/
+     *       '              - TOTAL USER BENEFITS      =',E12.4/
+     *       '              - REMAINING RIDER BENEFITS =',E12.4/
+     *       '                                PER TRIP =',F12.4/
+     *       '              - NEW  RIDER BENEFITS      =',E12.4/
+     *       '                                PER TRIP =',F12.4/
+     *       '              - LOST RIDER BENEFITS      =',E12.4/
+     *       '                                PER TRIP =',F12.4/
+     *       '              - REMAINING RIDERS         =',E12.4/
+     *       '              - NEW RIDERS               =',E12.4/
+     *       '              - LOST RIDERS              =',E12.4/
+     *       ' DRIVE MARKET - TOTAL CHANGE IN PRICE    =',E12.4/
+     *       '              - TRANSIT PRICE CHANGE     =',E12.4/
+     *       '              - TOTAL USER BENEFITS      =',E12.4/
+     *       '              - REMAINING RIDER BENEFITS =',E12.4/
+     *       '              - NEW  RIDER BENEFITS      =',E12.4/
+     *       '              - LOST RIDER BENEFITS      =',E12.4/
+     *       '              - REMAINING RIDERS         =',E12.4/
+     *       '              - NEW RIDERS               =',E12.4/
+     *       '              - LOST RIDERS              =',E12.4//
      *       ' MODE INDICATOR VALUES'/
      *       ' ---------------------'/
      *       ' WALK  MARKET INDICATOR                  =',I10/
@@ -1213,8 +1222,8 @@ C --------------------------------------------------------
       WRITE(26,8115) XWBENEF,XDBENEF
  8115 FORMAT(' EXCESS BENEFIT VALUES'/
      *       ' ---------------------'/
-     *       ' WALK  MARKET BENEFITS                   =',E10.4/
-     *       ' DRIVE MARKET BENEFITS                   =',E10.4/)
+     *       ' WALK  MARKET BENEFITS                   =',E12.4/
+     *       ' DRIVE MARKET BENEFITS                   =',E12.4/)
       END IF
       END IF
       IF((LIZ.AND.(SIZ.EQ.BIZ)).OR.(LJZ.AND.(SJZ.EQ.BJZ))) THEN
@@ -1466,10 +1475,10 @@ C
      *       '       TOTAL'/
      *       '                      ----------     ----------',
      *       '     ----------'/
-     *       ' REMAINING RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '   NEW     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '  LOST     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '            TOTAL     ',F10.2,5X,F10.2,5X,F10.2/)
+     *       ' REMAINING RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '   NEW     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '  LOST     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '            TOTAL     ',F10.0,5X,F10.0,5X,F10.0/)
       UBEN(1,1,7)=UBEN(1,1,7)+UBEN(1,1,I)
       UBEN(1,2,7)=UBEN(1,2,7)+UBEN(1,2,I)
       UBEN(2,1,7)=UBEN(2,1,7)+UBEN(2,1,I)
@@ -1491,10 +1500,10 @@ C
      *       '        TOTAL'/
      *       '                     ----------     ----------',
      *       '      ----------'/
-     *       ' REMAINING RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '   NEW     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '  LOST     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '            TOTAL     ',F10.2,5X,F10.2,5X,F10.2/)
+     *       ' REMAINING RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '   NEW     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '  LOST     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '            TOTAL     ',F10.0,5X,F10.0,5X,F10.0/)
       IF(NEM) THEN
       OPEN(44,FILE=NEMFILE,STATUS='UNKNOWN',FORM='FORMATTED')
       WRITE(44,8303) UBEN(1,1,7),UBEN(1,2,7),UBEN(1,3,7),
@@ -1502,10 +1511,10 @@ C
      *               UBEN(3,1,7),UBEN(3,2,7),UBEN(3,3,7),
      *               UBEN(4,1,7),UBEN(4,2,7),UBEN(4,3,7) 
  8303 FORMAT('TOTAL,WALK_DRIVE,MUST_DRIVE,TOTAL'/    
-     *       'REMAINING_RIDERS,',F10.2,',',F10.2,',',F10.2/
-     *       'NEW_RIDERS,',F10.2,',',F10.2,',',F10.2/
-     *       'LOST_RIDERS,',F10.2,',',F10.2,',',F10.2/
-     *       'TOTAL,',F10.2,',',F10.2,',',F10.2)      
+     *       'REMAINING_RIDERS,',F10.0,',',F10.0,',',F10.0/
+     *       'NEW_RIDERS,',F10.0,',',F10.0,',',F10.0/
+     *       'LOST_RIDERS,',F10.0,',',F10.0,',',F10.0/
+     *       'TOTAL,',F10.0,',',F10.0,',',F10.0)      
       END IF
 C
 C SUMMARIZE NUMBER OF EXISTING AND NEW TRANSIT RIDERS
@@ -1524,10 +1533,10 @@ C
      *       '       TOTAL'/
      *       '                     ----------     ----------',
      *       '     ----------'/
-     *       ' REMAINING RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '   NEW     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '  LOST     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '            TOTAL     ',F10.2,5X,F10.2,5X,F10.2/)
+     *       ' REMAINING RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '   NEW     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '  LOST     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '            TOTAL     ',F10.0,5X,F10.0,5X,F10.0/)
       TRID(1,1,7)=TRID(1,1,7)+TRID(1,1,I)
       TRID(1,2,7)=TRID(1,2,7)+TRID(1,2,I)
       TRID(2,1,7)=TRID(2,1,7)+TRID(2,1,I)
@@ -1549,13 +1558,13 @@ C
      *       '        TOTAL'/
      *       '                     ----------     ----------',
      *       '      ----------'/
-     *       ' REMAINING RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '   NEW     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '  LOST     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
-     *       '            TOTAL     ',F10.2,5X,F10.2,5X,F10.2/)
+     *       ' REMAINING RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '   NEW     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '  LOST     RIDERS     ',F10.0,5X,F10.0,5X,F10.0/
+     *       '            TOTAL     ',F10.0,5X,F10.0,5X,F10.0/)
       TERIDERS=ERIDERSW+ERIDERSD
       WRITE(26,8404) ERIDERSW,ERIDERSD,TERIDERS
- 8404 FORMAT(' EXISTING RIDERS      ',F10.2,5X,F10.2,5X,F10.2,
+ 8404 FORMAT(' EXISTING RIDERS      ',F10.0,5X,F10.0,5X,F10.0,
      *       ' WITH NO CHANGE IN BENEFITS')
 C
 C COMPUTE USER BENEFIT/PER TRIP
@@ -1584,10 +1593,10 @@ C
      *       '       TOTAL'/
      *       '                     ----------     ----------',
      *       '     ----------'/
-     *       ' REMAINING RIDERS     ',F10.4,5X,F10.4,5X,F10.4/
-     *       '   NEW     RIDERS     ',F10.4,5X,F10.4,5X,F10.4/
-     *       '  LOST     RIDERS     ',F10.4,5X,F10.4,5X,F10.4/
-     *       '            TOTAL     ',F10.4,5X,F10.4,5X,F10.4/)
+     *       ' REMAINING RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
+     *       '   NEW     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
+     *       '  LOST     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
+     *       '            TOTAL     ',F10.2,5X,F10.2,5X,F10.2/)
   456 CONTINUE
       WRITE(26,8502) UBPT(1,1,7),UBPT(1,2,7),UBPT(1,3,7),
      *               UBPT(2,1,7),UBPT(2,2,7),UBPT(2,3,7),
@@ -1597,10 +1606,10 @@ C
      *       '        TOTAL'/
      *       '                     ----------     ----------',
      *       '      ----------'/
-     *       ' REMAINING RIDERS     ',F10.4,5X,F10.4,5X,F10.4/
-     *       '   NEW     RIDERS     ',F10.4,5X,F10.4,5X,F10.4/
-     *       '  LOST     RIDERS     ',F10.4,5X,F10.4,5X,F10.4/
-     *       '            TOTAL     ',F10.4,5X,F10.4,5X,F10.4/)
+     *       ' REMAINING RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
+     *       '   NEW     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
+     *       '  LOST     RIDERS     ',F10.2,5X,F10.2,5X,F10.2/
+     *       '            TOTAL     ',F10.2,5X,F10.2,5X,F10.2/)
 C
 C SUMMARIZE USER BENEFITS FOR EXISTING AND NEW TRANSIT RIDERS
 C BASED UPON MODAL INDICATOR MATRIX
@@ -1841,11 +1850,11 @@ C WRITE PROGRAM BANNER, DATE & TIME
 C
       CALL GETDAT(IYR,IMON,IDAY)
       CALL GETTIM(IHR,IMIN,ISEC,I100)
-      IF(IYR.GT.2019) THEN
- 9901 FORMAT(/5x,' *** PROGRAM PERMISSION DATE HAS EXPIRED ***'/)
-      WRITE(*,9901)
-      STOP
-      END IF
+C     IF(IYR.GT.2020) THEN
+C9901 FORMAT(/5x,' *** PROGRAM PERMISSION DATE HAS EXPIRED ***'/)
+C     WRITE(*,9901)
+C     STOP
+C     END IF
       IYR=IYR-2000
       WRITE(26,9006)IMON,IDAY,IYR,IHR,IMIN,ISEC
  9006 FORMAT(/1X,'     TRANSIT USER BENEFIT'/
