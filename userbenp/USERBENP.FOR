@@ -23,7 +23,15 @@ C--------------------------------------------------------------------
       OIZ=1
       OJZ=1
       OKC=1
-      RECNUM=0
+      RECNUM=0   
+      WALKTRN=0.0
+      DRIVTRN=0.0
+      TOTPER=0.0
+      MOTPER=0.0
+      TOTTRN=0.0
+      TRNTOT=0.0
+      PERTOT=0.0
+      PERMOT=0.0
       NREC=1000
 C
 C WRITE PROGRAM BANNER, DATE & TIME
@@ -32,7 +40,7 @@ C
      *        FORM='FORMATTED')
       CALL GETDAT(IYR,IMON,IDAY)
       CALL GETTIM(IHR,IMIN,ISEC,I100)
-      IF(IYR.GT.2019) THEN
+      IF(IYR.GT.2020) THEN
       WRITE(26,9901) 
  9901 FORMAT(/5x,' *** PROGRAM PERMISSION DATE HAS EXPIRED ***'/)
       WRITE(*,9901)
@@ -43,7 +51,7 @@ C
  9006 FORMAT(/1X,'HIGHWAY AND TRANSIT USER BENEFIT'/
      *        1X,'  DATA INPUT SUMMARY PROGRAM'/
      *        1X,'        PROGRAM: USERBENP'/
-     *        1X,'        VERSION:  27Jan17'//
+     *        1X,'        VERSION:  27May20'//
      *        1X,'        Date:',I2,'/',I2,'/',I2/
      *        1X,'        Time:',I2,':',I2,':',I2//)
       WRITE(*,9006)IMON,IDAY,IYR,IHR,IMIN,ISEC
@@ -133,40 +141,41 @@ C
 C
 C CHECK FOR MISSING RECORDS
 C
-       IF(FOUT) THEN
-       BTOT=NZON1*NCAT1*BIZ+NCAT1*BJZ+BKC-1
-       OTOT=NZON1*NCAT1*OIZ+NCAT1*OJZ+OKC-1
-       DIFF=BTOT-OTOT-1
-        IF(DIFF.GT.0) THEN
-        DO K=1,DIFF
-        NTOT=OTOT+K
-        NIZ=NTOT/(NZON1*NCAT1)
-        RJZ=FLOAT(NTOT)-(FLOAT(NIZ)*FLOAT(NZON1)*FLOAT(NCAT1))
-        RJZ=RJZ/FLOAT(NCAT1)
-        NJZ=IFIX(RJZ)
-        NKC=NTOT-(NIZ*NZON1*NCAT1)-(NJZ*NCAT1)+1
-        IF(NJZ.EQ.0) THEN
-        NIZ=NIZ-1
-        NJZ=NZON1
+C      IF(FOUT) THEN
+C      BTOT=NZON1*NCAT1*BIZ+NCAT1*BJZ+BKC-1
+C      OTOT=NZON1*NCAT1*OIZ+NCAT1*OJZ+OKC-1
+C      DIFF=BTOT-OTOT-1
+C       IF(DIFF.GT.0) THEN
+C       DO K=1,DIFF
+C       NTOT=OTOT+K
+C       NIZ=NTOT/(NZON1*NCAT1)
+C       RJZ=FLOAT(NTOT)-(FLOAT(NIZ)*FLOAT(NZON1)*FLOAT(NCAT1))
+C       RJZ=RJZ/FLOAT(NCAT1)
+C       NJZ=IFIX(RJZ)
+C       NKC=NTOT-(NIZ*NZON1*NCAT1)-(NJZ*NCAT1)+1
+C       IF(NJZ.EQ.0) THEN
+C       NIZ=NIZ-1
+C       NJZ=NZON1
 C       WRITE(26,9997) NIZ,NJZ,NKC
- 9997   FORMAT(' BOUNDARY CONDITION NIZ=',I4,' NJZ=',I4,' NKC=',I1)
-        END IF
-        WRITE(2) NIZ,NJZ,NKC,ALSUM
+C9997   FORMAT(' BOUNDARY CONDITION NIZ=',I4,' NJZ=',I4,' NKC=',I1)
+C       END IF
+C       WRITE(2) NIZ,NJZ,NKC,ALSUM
 C       WRITE(26,9999) K,BIZ,BJZ,BKC,OIZ,OJZ,OKC,NIZ,NJZ,NKC,RJZ
- 9999   FORMAT(' K=',I3,
-     *         ' BIZ=',I4,' BJZ=',I4,' BKC=',I4,' -- OIZ=',I4,
-     *         ' OJZ=',I4,' OKC=',I4,' -- NIZ=',I4,' NJZ=',I4,
-     *         ' NKC=',I4,' -- RJZ=',F8.2)
-        END DO
-        END IF
-       END IF
+C9999   FORMAT(' K=',I3,
+C    *         ' BIZ=',I4,' BJZ=',I4,' BKC=',I4,' -- OIZ=',I4,
+C    *         ' OJZ=',I4,' OKC=',I4,' -- NIZ=',I4,' NJZ=',I4,
+C    *         ' NKC=',I4,' -- RJZ=',F8.2)
+C       END DO
+C       END IF
+C      END IF
 C
 C CHECK INTEGRITY OF RECORD VALUES
 C
       IF(BIZ.LT.OIZ) THEN
       WRITE(27,8007) BIZ,BJZ,BKC,OIZ,OJZ,OKC
  8007 FORMAT(' Error in Record Sort --> BIZ=',I4,' BJZ=',I4,' BKC=',I1,
-     *       ' OIZ=',I4,' OJZ=',I4,' OKC=',I1)
+     *       ' OIZ=',I4,' OJZ=',I4,' OKC=',I2)      
+      IF(FOUT) CLOSE(2,STATUS='KEEP')
       STOP 8007
       ELSE
        IF(BJZ.LT.OJZ.AND.BIZ.EQ.OIZ) THEN
@@ -243,8 +252,8 @@ C CHECK FOR NEGATIVE PERSON TRIP VALUES
 C
       IF(BLSUM(1).LT.0.OR.BLSUM(2).LT.0) THEN
       WRITE(27,8005) BIZ,BJZ,BKC,BLSUM
- 8005 FORMAT(' IZ=',I8,' JZ=',I8,' BKC=',I1,
-     *       ' LSUM=',7(1X,E10.2))
+ 8005 FORMAT(' IZ=',I8,' JZ=',I8,' BKC=',I2,
+     *       ' LSUM=',7(1X,E10.2),' NEGATIVE PERSON TRIPS')
       ERRNUM=ERRNUM+1
       IF(ERRNUM.GT.1000) THEN
       WRITE(*,8006)
